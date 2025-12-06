@@ -354,22 +354,27 @@
             chat.appendChild(aiDiv);
             const contentDiv = aiDiv.querySelector('.message-content');
 
-            try {
-                // Add to conversation history
-                conversationHistory.push({ role: 'user', content: '/no_think ' + message });
+            // Add to conversation history
+            conversationHistory.push({ role: 'user', content: '/no_think ' + message });
 
-                const response = await fetch(API_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        model: MODEL,
-                        stream: true,
-                        messages: [
-                            { role: 'system', content: 'Your name is Laama. You are NOT Qwen, you are NOT an AI from Tongyi Lab. You are Laama, an independent helpful assistant. Never mention Qwen, Tongyi, or Alibaba. If asked who you are or what model you are, say "I am Laama, a helpful assistant." Be friendly and concise.' },
-                            ...conversationHistory
-                        ]
-                    })
-                });
+            // Retry up to 3 times
+            let retries = 3;
+            let success = false;
+
+            while (retries > 0 && !success) {
+                try {
+                    const response = await fetch(API_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            model: MODEL,
+                            stream: true,
+                            messages: [
+                                { role: 'system', content: 'Your name is Laama. You are NOT Qwen, you are NOT an AI from Tongyi Lab. You are Laama, an independent helpful assistant. Never mention Qwen, Tongyi, or Alibaba. If asked who you are or what model you are, say "I am Laama, a helpful assistant." Be friendly and concise.' },
+                                ...conversationHistory
+                            ]
+                        })
+                    });
 
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
@@ -400,9 +405,19 @@
                 // Add AI response to history
                 let finalMessage = fullMessage.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
                 conversationHistory.push({ role: 'assistant', content: finalMessage });
+                success = true;
 
-            } catch (error) {
-                contentDiv.innerHTML = 'Sorry, I encountered an error. Please try again.';
+                } catch (error) {
+                    retries--;
+                    if (retries > 0) {
+                        contentDiv.innerHTML = 'Retrying...';
+                        await new Promise(r => setTimeout(r, 2000)); // Wait 2 seconds
+                    } else {
+                        contentDiv.innerHTML = 'Sorry, I encountered an error. Please try again.';
+                        // Remove failed message from history
+                        conversationHistory.pop();
+                    }
+                }
             }
 
             sendBtn.disabled = false;
